@@ -22,22 +22,25 @@ from model.dataset import PretrainDataset
 warnings.filterwarnings('ignore')
 
 
+# 定义日志函数，用于输出训练过程中的信息
 def Logger(content):
     if not ddp or dist.get_rank() == 0:
         print(content)
 
 
+# 定义获取学习率的函数
 def get_lr(current_step, total_steps, lr):
     return lr / 10 + 0.5 * lr * (1 + math.cos(math.pi * current_step / total_steps))
 
 
+# 定义训练一个epoch的函数
 def train_epoch(epoch, wandb):
     loss_fct = nn.CrossEntropyLoss(reduction='none')
     start_time = time.time()
     for step, (X, Y, loss_mask) in enumerate(train_loader):
-        X = X.to(args.device)
-        Y = Y.to(args.device)
-        loss_mask = loss_mask.to(args.device)
+        X :torch.Tensor = X.to(args.device)
+        Y :torch.Tensor = Y.to(args.device)
+        loss_mask :torch.Tensor = loss_mask.to(args.device)
 
         lr = get_lr(epoch * iter_per_epoch + step, args.epochs * iter_per_epoch, args.learning_rate)
         for param_group in optimizer.param_groups:
@@ -95,6 +98,7 @@ def train_epoch(epoch, wandb):
             model.train()
 
 
+# 初始化模型和tokenizer
 def init_model(lm_config):
     tokenizer = AutoTokenizer.from_pretrained('./model/minimind_tokenizer')
     model = MiniMindLM(lm_config).to(args.device)
@@ -102,6 +106,7 @@ def init_model(lm_config):
     return model, tokenizer
 
 
+# 初始化分布式模式
 def init_distributed_mode():
     if not ddp: return
     global ddp_local_rank, DEVICE
@@ -122,7 +127,8 @@ if __name__ == "__main__":
     parser.add_argument("--epochs", type=int, default=1)
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--learning_rate", type=float, default=5e-4)
-    parser.add_argument("--device", type=str, default="cuda:0" if torch.cuda.is_available() else "cpu")
+    # parser.add_argument("--device", type=str, default="cuda:0" if torch.cuda.is_available() else "cpu")
+    parser.add_argument("--device", type=str, default="mps" if torch.backends.mps.is_available() else "cpu")
     parser.add_argument("--dtype", type=str, default="bfloat16")
     parser.add_argument("--use_wandb", action="store_true")
     parser.add_argument("--wandb_project", type=str, default="MiniMind-Pretrain")
@@ -155,17 +161,9 @@ if __name__ == "__main__":
     ddp = int(os.environ.get("RANK", -1)) != -1  # is this a ddp run?
     ddp_local_rank, DEVICE = 0, "cuda:0"
 
-    base_seed = 1337
-    torch.manual_seed(base_seed)
-    torch.cuda.manual_seed(base_seed)
-
     if ddp:
         init_distributed_mode()
         args.device = torch.device(DEVICE)
-        rank = dist.get_rank()
-        torch.manual_seed(base_seed + rank)
-        # 同时设置 CUDA 的随机种子
-        torch.cuda.manual_seed(base_seed + rank)
 
     if args.use_wandb and (not ddp or ddp_local_rank == 0):
         import wandb
